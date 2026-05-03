@@ -3,7 +3,9 @@ using Dalamud.Utility.Signatures;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Component.Shell;
 using SimpleTweaksPlugin;
 using SimpleTweaksPlugin.TweakSystem;
 using SimpleTweaksPlugin.Utility;
@@ -13,10 +15,8 @@ namespace SecretTweaks;
 [TweakName("Change Pose Direct")]
 [TweakDescription("Allow changing pose to a specific pose number. /cpose [number]")]
 public unsafe class ChangePoseDirect : SecretTweaks.SubTweak {
-    private delegate byte ProcessChatInputDelegate(UIModule* uiModule, byte** a2, nint a3);
-
-    [TweakHook, Signature("E8 ?? ?? ?? ?? FE 87 ?? ?? ?? ?? C7 87", DetourName = nameof(ProcessChatDetour))]
-    private HookWrapper<ProcessChatInputDelegate> processChatHook = null!;
+    [TweakHook(typeof(ShellCommandModule), nameof(ShellCommandModule.ExecuteCommandInner), nameof(ProcessChatDetour))]
+    private HookWrapper<ShellCommandModule.Delegates.ExecuteCommandInner> processChatHook = null!;
 
     private void ChangePose(EmoteController.PoseType poseType, byte poseNum, bool changingPose, ref bool abort, bool noErrorMessage = false) {
         var groupMax = EmoteController.GetAvailablePoses(poseType);
@@ -44,13 +44,13 @@ public unsafe class ChangePoseDirect : SecretTweaks.SubTweak {
         }
     }
 
-    private void ParseMessage(byte** message, out bool abort) {
+    private void ParseMessage(string inputString, out bool abort) {
         abort = false;
         try {
-            var character = (Character*)Service.ClientState.LocalPlayer?.Address;
+            var character = (Character*)Service.Objects.LocalPlayer?.Address;
             if (character == null) return;
 
-            var inputString = Common.ReadString(*message);
+            
             if (inputString[0] == '/' && inputString.Length > 1) {
                 var split = inputString[1..].Split(' ');
 
@@ -107,9 +107,12 @@ public unsafe class ChangePoseDirect : SecretTweaks.SubTweak {
         }
     }
 
-    private byte ProcessChatDetour(UIModule* uiModule, byte** message, nint a3) {
-        ParseMessage(message, out var abort);
-        if (abort) return 0;
-        return processChatHook.Original(uiModule, message, a3);
+    private void ProcessChatDetour(ShellCommandModule* shellCommandModule, Utf8String* message, UIModule* uiModule) {
+        if (message != null) {
+            ParseMessage(message->ToString(), out var abort);
+            if (abort) return;
+        }
+        
+        processChatHook.Original(shellCommandModule, message, uiModule);
     }
 }
